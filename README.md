@@ -7,5 +7,5 @@
  ```
 ## uasge
  ```bash
- python3 adabra.py -u https://cnn.com
+ python3 adabra.py -u https://target.com
  ```
