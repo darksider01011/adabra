@@ -4,3 +4,4 @@ beautifulsoup4==4.12.2
 ipwhois
 dnspython==2.3.0
 tldextract
+
