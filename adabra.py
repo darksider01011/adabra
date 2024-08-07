@@ -14,10 +14,16 @@ import re
 import subprocess
 from bs4 import BeautifulSoup
 from ipwhois import IPWhois
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import logging
 
-# ANSI escape codes for yellow bold text
+# ANSI escape codes for colored text
 YELLOW_BOLD = "\033[1;33m"
 RESET = "\033[0m"
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger()
 
 def extract_domain(url):
     parsed_url = urlparse(url)
@@ -56,26 +62,26 @@ def fetch_url(url):
         end_time = time.time()
         response.raise_for_status()
         
-        print(f"\n{YELLOW_BOLD}HTTP Request Information:{RESET}")
-        print(f"  Request Method: GET")
-        print(f"  URL: {url}")
-        print(f"  Status Code: {response.status_code}")
-        print(f"  Response Time: {end_time - start_time:.2f} seconds")
-        print(f"  Request Headers: {response.request.headers}")
+        logger.info(f"\n{YELLOW_BOLD}HTTP Request Information:{RESET}")
+        logger.info(f"  Request Method: GET")
+        logger.info(f"  URL: {url}")
+        logger.info(f"  Status Code: {response.status_code}")
+        logger.info(f"  Response Time: {end_time - start_time:.2f} seconds")
+        logger.info(f"  Request Headers: {response.request.headers}")
         
-        print(f"\n{YELLOW_BOLD}All Response Headers:{RESET}")
+        logger.info(f"\n{YELLOW_BOLD}All Response Headers:{RESET}")
         for header, value in response.headers.items():
             if 'http://' in value or 'https://' in value:
                 urls = re.findall(r'(https?://\S+)', value)
                 for url in urls:
-                    print(f"  {header}: {url}")
+                    logger.info(f"  {header}: {url}")
             else:
-                print(f"  {header}: {value}")
+                logger.info(f"  {header}: {value}")
         
         return response
     
     except requests.RequestException as e:
-        print(f"Error fetching the URL: {e}")
+        logger.error(f"Error fetching the URL: {e}")
         return None
 
 def analyze_meta_tags(response):
@@ -95,7 +101,7 @@ def analyze_meta_tags(response):
         return meta_info
 
     except Exception as e:
-        print(f"Error analyzing meta tags: {e}")
+        logger.error(f"Error analyzing meta tags: {e}")
         return None
 
 def analyze_ssl_tls(domain, port=443):
@@ -107,13 +113,13 @@ def analyze_ssl_tls(domain, port=443):
                 cert = ssock.getpeercert()
                 protocol = ssock.version()
                 
-                print(f"\n{YELLOW_BOLD}SSL/TLS Protocol:{RESET} {protocol}")
-                print(f"{YELLOW_BOLD}SSL/TLS Certificate:{RESET}")
+                logger.info(f"\n{YELLOW_BOLD}SSL/TLS Protocol:{RESET} {protocol}")
+                logger.info(f"{YELLOW_BOLD}SSL/TLS Certificate:{RESET}")
                 for key, value in cert.items():
-                    print(f"  {key}: {value}")
+                    logger.info(f"  {key}: {value}")
 
     except Exception as e:
-        print(f"Error analyzing SSL/TLS: {e}")
+        logger.error(f"Error analyzing SSL/TLS: {e}")
 
 def analyze_security_headers(response):
     try:
@@ -126,20 +132,20 @@ def analyze_security_headers(response):
             'X-XSS-Protection': headers.get('X-XSS-Protection')
         }
         
-        print(f"\n{YELLOW_BOLD}Security Headers:{RESET}")
+        logger.info(f"\n{YELLOW_BOLD}Security Headers:{RESET}")
         for header in sorted(security_headers.keys()):
             value = security_headers[header]
             if value:
-                print(f"  {header}:")
+                logger.info(f"  {header}:")
                 if 'http://' in value or 'https://' in value:
                     urls = re.findall(r'(https?://\S+)', value)
                     for url in urls:
-                        print(f"    {url}")
+                        logger.info(f"    {url}")
                 else:
-                    print(f"    {value}")
+                    logger.info(f"    {value}")
 
     except Exception as e:
-        print(f"Error fetching security headers: {e}")
+        logger.error(f"Error fetching security headers: {e}")
 
 def server_info(url):
     try:
@@ -153,25 +159,25 @@ def server_info(url):
             'Backend Server': response.headers.get('X-Backend-Server', 'Unknown'),
         }
         
-        print(f"\n{YELLOW_BOLD}Server Information:{RESET}")
+        logger.info(f"\n{YELLOW_BOLD}Server Information:{RESET}")
         for header, value in server_headers.items():
             if value != 'Unknown':
-                print(f"  {header}: {value}")
+                logger.info(f"  {header}: {value}")
 
     except requests.RequestException as e:
-        print(f"Error fetching server info: {e}")
+        logger.error(f"Error fetching server info: {e}")
 
 def page_content_analysis(response):
     try:
         soup = BeautifulSoup(response.text, 'html.parser')
         text = soup.get_text()
         word_count = len(text.split())
-        print(f"\n{YELLOW_BOLD}Page Content Analysis:{RESET}")
-        print(f"  Word Count: {word_count}")
-        print(f"  Page Length: {len(response.text)} bytes")
+        logger.info(f"\n{YELLOW_BOLD}Page Content Analysis:{RESET}")
+        logger.info(f"  Word Count: {word_count}")
+        logger.info(f"  Page Length: {len(response.text)} bytes")
 
     except Exception as e:
-        print(f"Error analyzing page content: {e}")
+        logger.error(f"Error analyzing page content: {e}")
 
 def performance_info(url):
     try:
@@ -179,83 +185,75 @@ def performance_info(url):
         response = requests.get(url)
         end_time = time.time()
         load_time = end_time - start_time
-        print(f"\n{YELLOW_BOLD}Performance Information:{RESET}")
-        print(f"  Page Load Time: {load_time:.2f} seconds")
-        print(f"  Content Size: {len(response.content)} bytes")
+        logger.info(f"\n{YELLOW_BOLD}Performance Information:{RESET}")
+        logger.info(f"  Page Load Time: {load_time:.2f} seconds")
+        logger.info(f"  Content Size: {len(response.content)} bytes")
 
     except requests.RequestException as e:
-        print(f"Error fetching performance info: {e}")
+        logger.error(f"Error fetching performance info: {e}")
 
 def dns_info(domain):
     try:
-        print(f"\n{YELLOW_BOLD}DNS Information for:{RESET} {domain}")
+        logger.info(f"\n{YELLOW_BOLD}DNS Information for:{RESET} {domain}")
         
         ns_records = []
         
         # Get DNS records
-        try:
-            answers = dns.resolver.resolve(domain, 'A')
-            for rdata in answers:
-                ip_address = rdata.address
-                print(f"  A Record: {ip_address}")
-                
-                # Fetch ASN information for the IP address
-                obj = IPWhois(ip_address)
-                res = obj.lookup_rdap()
-                asn = res['asn']
-                asn_country_code = res['asn_country_code']
-                asn_description = res['asn_description']
-                print(f"  ASN: {asn}")
-                print(f"  ASN Country Code: {asn_country_code}")
-                print(f"  ASN Description: {asn_description}")
-                
-                # Retrieve unique IP prefixes
-                unique_prefixes = get_unique_ip_prefixes(asn)
-                if unique_prefixes:
-                    print(f"  Unique IP Prefixes:")
-                    for prefix in unique_prefixes:
-                        print(f"    {prefix}")
-                else:
-                    print("  No IP prefixes found.")
-                
-        except dns.resolver.NoAnswer:
-            print("  No A Record found.")
-        
-        try:
-            answers = dns.resolver.resolve(domain, 'MX')
-            for rdata in answers:
-                print(f"  MX Record: {rdata.exchange}")
-        except dns.resolver.NoAnswer:
-            print("  No MX Record found.")
-        
-        try:
-            answers = dns.resolver.resolve(domain, 'NS')
-            for rdata in answers:
-                ns_records.append(rdata.target.to_text())
-                print(f"  NS Record: {rdata.target}")
-        except dns.resolver.NoAnswer:
-            print("  No NS Record found.")
-        
-        try:
-            answers = dns.resolver.resolve(domain, 'TXT')
-            for rdata in answers:
-                print(f"  TXT Record: {rdata.to_text()}")
-        except dns.resolver.NoAnswer:
-            print("  No TXT Record found.")
+        with ThreadPoolExecutor() as executor:
+            future_to_record = {
+                executor.submit(dns.resolver.resolve, domain, 'A'): 'A',
+                executor.submit(dns.resolver.resolve, domain, 'MX'): 'MX',
+                executor.submit(dns.resolver.resolve, domain, 'NS'): 'NS',
+                executor.submit(dns.resolver.resolve, domain, 'TXT'): 'TXT'
+            }
+            for future in as_completed(future_to_record):
+                record_type = future_to_record[future]
+                try:
+                    answers = future.result()
+                    for rdata in answers:
+                        if record_type == 'A':
+                            ip_address = rdata.address
+                            logger.info(f"  A Record: {ip_address}")
+                            # Fetch ASN information for the IP address
+                            obj = IPWhois(ip_address)
+                            res = obj.lookup_rdap()
+                            asn = res['asn']
+                            asn_country_code = res['asn_country_code']
+                            asn_description = res['asn_description']
+                            logger.info(f"  ASN: {asn}")
+                            logger.info(f"  ASN Country Code: {asn_country_code}")
+                            logger.info(f"  ASN Description: {asn_description}")
+                            # Retrieve unique IP prefixes
+                            unique_prefixes = get_unique_ip_prefixes(asn)
+                            if unique_prefixes:
+                                logger.info(f"  Unique IP Prefixes:")
+                                for prefix in unique_prefixes:
+                                    logger.info(f"    {prefix}")
+                            else:
+                                logger.info("  No IP prefixes found.")
+                        elif record_type == 'MX':
+                            logger.info(f"  MX Record: {rdata.exchange}")
+                        elif record_type == 'NS':
+                            ns_records.append(rdata.target.to_text())
+                            logger.info(f"  NS Record: {rdata.target}")
+                        elif record_type == 'TXT':
+                            logger.info(f"  TXT Record: {rdata.to_text()}")
+                except dns.resolver.NoAnswer:
+                    logger.info(f"  No {record_type} Record found.")
         
         try:
             z = dns.zone.from_xfr(dns.query.xfr(domain, '127.0.0.1'))
             for name, node in z.nodes.items():
-                print(f"  Zone Transfer: {name} -> {node.to_text()}")
+                logger.info(f"  Zone Transfer: {name} -> {node.to_text()}")
         except dns.exception.DNSException as e:
-            print(f"  Zone Transfer Failed: {e}")
+            logger.info(f"  Zone Transfer Failed: {e}")
 
     except Exception as e:
-        print(f"Error fetching DNS information: {e}")
+        logger.error(f"Error fetching DNS information: {e}")
 
 def protocol_info(domain):
     try:
-        print(f"\n{YELLOW_BOLD}Protocol Information for:{RESET} {domain}")
+        logger.info(f"\n{YELLOW_BOLD}Protocol Information for:{RESET} {domain}")
         protocols = {
             'TCP': 80,
             'HTTPS': 443,
@@ -263,28 +261,34 @@ def protocol_info(domain):
             'SSH': 22
         }
         
-        for proto, port in protocols.items():
-            try:
-                if proto == 'DNS':
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-                    sock.settimeout(1)
-                    sock.sendto(b'', (domain, port))
-                    sock.close()
-                    print(f"  {proto} Protocol: Port {port} is reachable")
-                else:
-                    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    sock.settimeout(1)
-                    if port:
-                        sock.connect((domain, port))
-                        sock.close()
-                        print(f"  {proto} Protocol: Port {port} is open")
-                    else:
-                        print(f"  {proto} Protocol: Port {port} is not applicable")
-            except (socket.timeout, socket.error):
-                print(f"  {proto} Protocol: Port {port} is closed or not reachable")
+        with ThreadPoolExecutor() as executor:
+            future_to_protocol = {
+                executor.submit(check_protocol, domain, port): proto for proto, port in protocols.items()
+            }
+            for future in as_completed(future_to_protocol):
+                protocol = future_to_protocol[future]
+                result = future.result()
+                logger.info(f"  {protocol} Protocol: {result}")
 
     except Exception as e:
-        print(f"Error fetching protocol information: {e}")
+        logger.error(f"Error fetching protocol information: {e}")
+
+def check_protocol(domain, port):
+    try:
+        if port == 53:  # DNS uses UDP
+            sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            sock.settimeout(1)
+            sock.sendto(b'', (domain, port))
+            sock.close()
+            return "reachable"
+        else:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(1)
+            sock.connect((domain, port))
+            sock.close()
+            return "open"
+    except (socket.timeout, socket.error):
+        return "closed or not reachable"
 
 def detect_technology(response):
     try:
@@ -335,28 +339,28 @@ def detect_technology(response):
                 framework = framework_name.capitalize()
                 break
         
-        print(f"\n{YELLOW_BOLD}Technology Detection:{RESET}")
+        logger.info(f"\n{YELLOW_BOLD}Technology Detection:{RESET}")
         if cms:
-            print(f"  CMS Detected: {cms}")
+            logger.info(f"  CMS Detected: {cms}")
         else:
-            print("  CMS Detected: None detected")
+            logger.info("  CMS Detected: None detected")
         
         if programming_language:
-            print(f"  Programming Language: {programming_language}")
+            logger.info(f"  Programming Language: {programming_language}")
         else:
-            print("  Programming Language: None detected")
+            logger.info("  Programming Language: None detected")
         
         if framework:
-            print(f"  Framework: {framework}")
+            logger.info(f"  Framework: {framework}")
         else:
-            print("  Framework: None detected")
+            logger.info("  Framework: None detected")
 
     except Exception as e:
-        print(f"Error detecting technology: {e}")
+        logger.error(f"Error detecting technology: {e}")
 
 def detect_os_ttl(domain):
     try:
-        print(f"\n{YELLOW_BOLD}OS Detection based on TTL:{RESET}")
+        logger.info(f"\n{YELLOW_BOLD}OS Detection based on TTL:{RESET}")
         response = os.system(f"ping -c 1 {domain}")
         ttl = None
         
@@ -367,18 +371,18 @@ def detect_os_ttl(domain):
                 ttl = int(ttl.group(1))
                 
                 if ttl <= 64:
-                    print("  Likely OS: Linux")
+                    logger.info("  Likely OS: Linux")
                 elif ttl <= 128:
-                    print("  Likely OS: Windows")
+                    logger.info("  Likely OS: Windows")
                 else:
-                    print("  OS: Unknown based on TTL")
+                    logger.info("  OS: Unknown based on TTL")
             else:
-                print("  TTL value not found.")
+                logger.info("  TTL value not found.")
         else:
-            print("  Ping failed.")
+            logger.info("  Ping failed.")
     
     except Exception as e:
-        print(f"Error detecting OS based on TTL: {e}")
+        logger.error(f"Error detecting OS based on TTL: {e}")
 
 def check_http_https_status(domain):
     http_url = f"http://{domain}"
@@ -394,12 +398,12 @@ def check_http_https_status(domain):
         except requests.RequestException:
             return "DOWN"
 
-    print(f"\n{YELLOW_BOLD}HTTP/HTTPS Status Check:{RESET}")
+    logger.info(f"\n{YELLOW_BOLD}HTTP/HTTPS Status Check:{RESET}")
     http_status = check_status(http_url)
     https_status = check_status(https_url)
 
-    print(f"  HTTP Status: {http_status}")
-    print(f"  HTTPS Status: {https_status}")
+    logger.info(f"  HTTP Status: {http_status}")
+    logger.info(f"  HTTPS Status: {https_status}")
 
 def get_unique_ip_prefixes(as_number):
     command = ['whois', '-h', 'whois.radb.net', '--', f'-i origin AS{as_number}']
@@ -412,23 +416,60 @@ def get_unique_ip_prefixes(as_number):
         return unique_prefixes
     
     except subprocess.CalledProcessError as e:
-        print(f"Error executing whois command: {e}")
+        logger.error(f"Error executing whois command: {e}")
         return set()
 
-def main(input_str):
+def main(input_str, link=False, asn=False):
     domain, port, path = normalize_input(input_str)
-    print(f"\n{YELLOW_BOLD}Analyzing Input:{RESET} {input_str}")
+    logger.info(f"\n{YELLOW_BOLD}Analyzing Input:{RESET} {input_str}")
+
+    if link:
+        logger.info(f"\n{YELLOW_BOLD}Link Extraction:{RESET}")
+        response = fetch_url(f"http://{domain}")
+        if response:
+            soup = BeautifulSoup(response.text, 'html.parser')
+            links = set()
+            for tag in soup.find_all('a', href=True):
+                link = tag.get('href')
+                if link.startswith('http'):
+                    links.add(link)
+            if links:
+                for link in links:
+                    logger.info(f"  {link}")
+            else:
+                logger.info("  No links found.")
+        return
+
+    if asn:
+        try:
+            ip_addresses = socket.gethostbyname_ex(domain)[2]
+            for ip_address in ip_addresses:
+                obj = IPWhois(ip_address)
+                res = obj.lookup_rdap()
+                asn = res['asn']
+                logger.info(f"\n{YELLOW_BOLD}ASN Whois for IP {ip_address}:{RESET}")
+                logger.info(f"  ASN: {asn}")
+                unique_prefixes = get_unique_ip_prefixes(asn)
+                if unique_prefixes:
+                    logger.info("  Unique IP Prefixes:")
+                    for prefix in unique_prefixes:
+                        logger.info(f"    {prefix}")
+                else:
+                    logger.info("  No IP prefixes found.")
+        except Exception as e:
+            logger.error(f"Error fetching ASN information: {e}")
+        return
 
     if port:
-        print(f"  Port: {port}")
+        logger.info(f"  Port: {port}")
     
     if path:
-        print(f"  Path: {path}")
+        logger.info(f"  Path: {path}")
 
     server_info(f"http://{domain}")  # Assuming default HTTP for server info
     
     domain_name = extract_domain(f"http://{domain}")
-    print(f"\n{YELLOW_BOLD}Domain:{RESET} {domain_name}")
+    logger.info(f"\n{YELLOW_BOLD}Domain:{RESET} {domain_name}")
     
     dns_info(domain_name)
     protocol_info(domain_name)
@@ -440,11 +481,11 @@ def main(input_str):
     if response:
         meta_tags_info = analyze_meta_tags(response)
         if meta_tags_info is not None:
-            print(f"\n{YELLOW_BOLD}Meta Tags Information:{RESET}")
+            logger.info(f"\n{YELLOW_BOLD}Meta Tags Information:{RESET}")
             for meta in meta_tags_info:
-                print(f"  Name: {meta['name']}, Property: {meta['property']}, Content: {meta['content']}")
+                logger.info(f"  Name: {meta['name']}, Property: {meta['property']}, Content: {meta['content']}")
         else:
-            print("Failed to retrieve or parse meta tags.")
+            logger.info("Failed to retrieve or parse meta tags.")
         
         analyze_ssl_tls(domain, int(port) if port else 443)
         analyze_security_headers(response)
@@ -452,34 +493,15 @@ def main(input_str):
         performance_info(url)
         detect_technology(response)
     else:
-        print("Failed to fetch the URL.")
+        logger.info("Failed to fetch the URL.")
     
     detect_os_ttl(domain)
-    
-    try:
-        ip_addresses = socket.gethostbyname_ex(domain)[2]
-        for ip_address in ip_addresses:
-            obj = IPWhois(ip_address)
-            res = obj.lookup_rdap()
-            asn = res['asn']
-            
-            print(f"\n{YELLOW_BOLD}ASN Whois for IP {ip_address}:{RESET}")
-            print(f"  ASN: {asn}")
-            unique_prefixes = get_unique_ip_prefixes(asn)
-            if unique_prefixes:
-                print("  Unique IP Prefixes:")
-                for prefix in unique_prefixes:
-                    print(f"    {prefix}")
-            else:
-                print("  No IP prefixes found.")
-            
-    except Exception as e:
-        print(f"Error fetching ASN information: {e}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Analyze a given URL, IP, or domain.")
     parser.add_argument('-u', '--url', type=str, required=True, help="The URL, IP, or domain to analyze")
+    parser.add_argument('--link', action='store_true', help="Extract and display all links from the provided URL")
+    parser.add_argument('--asn', action='store_true', help="Display ASN information for the provided domain")
     args = parser.parse_args()
     
-    main(args.url)
-
+    main(args.url, link=args.link, asn=args.asn)
